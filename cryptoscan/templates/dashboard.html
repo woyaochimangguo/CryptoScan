@@ -32,6 +32,7 @@
       <div id="runtime" class="text-xs text-gray-500 mt-1">scheduler/cache: …</div>
     </div>
     <div class="flex items-center gap-3 text-xs">
+      <a href="/contracts" class="border px-3 py-1 rounded hover:bg-gray-100">contracts</a>
       <label class="flex items-center gap-1"><input id="auto" type="checkbox" checked> auto-refresh 10s</label>
       <button onclick="refresh()" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">refresh</button>
     </div>
@@ -472,9 +473,11 @@ async function loadRuntime() {
     const schedAt = r.scheduler?.updated_at;
     const acctAt = r.account?.updated_at;
     const posAt = r.positions?.updated_at;
+    const contractsAt = r.contracts?.updated_at;
     el.innerHTML = `scheduler <span class='font-semibold'>${sched.status || 'unknown'}</span>${schedAt ? ` (${age(schedAt)})` : ''}
       · account cache ${age(acctAt)}
-      · positions cache ${age(posAt)}`;
+      · positions cache ${age(posAt)}
+      · contracts cache ${age(contractsAt)}`;
   } catch (err) {
     el.innerHTML = `<span class='text-red-600'>runtime unavailable: ${String(err.message || err)}</span>`;
   }

@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # Scheduler
     scan_interval_minutes: int = 5
     position_watch_interval_seconds: int = 60
+    contract_rankings_interval_seconds: int = 3600
 
     # Auto-execute (paper) — when enabled, scheduler will auto-open paper positions
     # for high-confidence consensus episodes within the safety guardrails below.

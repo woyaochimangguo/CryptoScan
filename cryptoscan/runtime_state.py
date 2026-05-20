@@ -9,6 +9,7 @@ from .models import RuntimeState
 KEY_ACCOUNT = "exchange.account"
 KEY_POSITIONS = "exchange.positions"
 KEY_SCHEDULER = "scheduler.status"
+KEY_CONTRACT_RANKINGS = "market.contract_rankings"
 
 
 def set_state(key: str, value: dict[str, Any]) -> RuntimeState:

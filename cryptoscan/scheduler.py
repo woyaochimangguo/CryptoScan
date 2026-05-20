@@ -22,7 +22,7 @@ from .db import init_db, session_scope
 from .harness import HarnessAgent
 from .models import Episode
 from .notify import send_episode
-from .runtime_state import KEY_ACCOUNT, KEY_POSITIONS, mark_scheduler, set_state
+from .runtime_state import KEY_ACCOUNT, KEY_CONTRACT_RANKINGS, KEY_POSITIONS, mark_scheduler, set_state
 
 log = logging.getLogger("cryptoscan.scheduler")
 
@@ -67,6 +67,23 @@ def refresh_exchange_snapshot() -> None:
     except Exception as e:
         _cache_state(KEY_POSITIONS, {"rows": [], "error": str(e)})
         log.warning("exchange_snapshot: positions fetch failed: %s", e)
+
+
+def refresh_contract_rankings() -> None:
+    """Refresh cached Binance USDT perpetuals enriched with spot market caps."""
+    try:
+        from .tools.contract_rankings import build_contract_rankings
+
+        payload = build_contract_rankings(include_unknown=True)
+        _cache_state(KEY_CONTRACT_RANKINGS, payload)
+        log.info(
+            "contract_rankings: refreshed %d rows (%d unknown market caps)",
+            payload.get("total", 0),
+            payload.get("unknown_market_cap", 0),
+        )
+    except Exception as e:
+        _cache_state(KEY_CONTRACT_RANKINGS, {"rows": [], "error": str(e)})
+        log.warning("contract_rankings: refresh failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +370,15 @@ def run(consensus_only_notify: bool = True) -> None:
         "interval",
         seconds=max(30, settings.position_watch_interval_seconds),
         id="exchange_snapshot",
+        next_run_time=datetime.now(timezone.utc),
+        max_instances=1,
+        coalesce=True,
+    )
+    sch.add_job(
+        refresh_contract_rankings,
+        "interval",
+        seconds=max(300, settings.contract_rankings_interval_seconds),
+        id="contract_rankings",
         next_run_time=datetime.now(timezone.utc),
         max_instances=1,
         coalesce=True,

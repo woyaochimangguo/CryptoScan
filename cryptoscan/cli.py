@@ -123,38 +123,14 @@ def contracts_by_market_cap(
     export: Optional[Path] = None,
 ) -> None:
     """List Binance USDT perpetual contracts sorted by approximate market cap."""
-    from .tools import binance_market as bm
+    from .tools.contract_rankings import build_contract_rankings
 
     try:
-        symbols = bm.perp_symbols()
-        tickers = bm.perp_tickers()
-        funding = bm.perp_funding()
-        mcaps = bm.market_caps()
-        spot = bm.spot_symbols()
+        payload = build_contract_rankings(include_unknown=include_unknown)
     except Exception as e:
         console.print(f"[red]contracts fetch failed:[/red] {type(e).__name__}: {e}")
         raise typer.Exit(2)
-
-    rows: list[dict[str, object]] = []
-    for symbol in symbols:
-        coin = symbol.removesuffix("USDT")
-        ticker = tickers.get(symbol, {})
-        market_cap = float(mcaps.get(coin, 0) or 0)
-        if not include_unknown and market_cap <= 0:
-            continue
-        rows.append(
-            {
-                "symbol": symbol,
-                "coin": coin,
-                "market_cap_usd": market_cap,
-                "price": float(ticker.get("lastPrice", 0) or 0),
-                "price_change_24h_pct": float(ticker.get("priceChangePercent", 0) or 0),
-                "volume_24h_usdt": float(ticker.get("quoteVolume", 0) or 0),
-                "funding_rate": float(funding.get(symbol, 0) or 0),
-                "has_spot": coin in spot,
-            }
-        )
-
+    rows = list(payload.get("rows") or [])
     rows.sort(key=lambda r: float(r["market_cap_usd"] or 0), reverse=not ascending)
     shown = rows[: max(limit, 0)] if limit else rows
 
@@ -180,7 +156,7 @@ def contracts_by_market_cap(
         )
     console.print(table)
     console.print(
-        f"[dim]shown={len(shown)} total={len(rows)} "
+        f"[dim]shown={len(shown)} total={len(rows)} unknown_mcap={payload.get('unknown_market_cap', 0)} "
         "market_cap source=Binance marketing endpoint, approximate[/dim]"
     )
 

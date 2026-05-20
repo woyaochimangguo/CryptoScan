@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>cryptoscan · contracts</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  table { font-variant-numeric: tabular-nums; }
+  td, th { padding: 0.42rem 0.6rem; }
+  tr:hover { background: #f9fafb; }
+  .pos { color: #16a34a; } .neg { color: #dc2626; } .neu { color: #6b7280; }
+  .pill { display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
+  .pill-spot { background:#dcfce7; color:#15803d; }
+  .pill-perp { background:#f3f4f6; color:#6b7280; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+<div class="max-w-7xl mx-auto p-6 space-y-5">
+  <header class="flex items-center justify-between border-b pb-3">
+    <div>
+      <h1 class="text-2xl font-semibold">contract market-cap ranking</h1>
+      <div id="meta" class="text-xs text-gray-500 mt-1">loading…</div>
+    </div>
+    <div class="flex items-center gap-3 text-xs">
+      <a href="/" class="border px-3 py-1 rounded hover:bg-gray-100">dashboard</a>
+      <label class="flex items-center gap-1"><input id="auto" type="checkbox" checked> auto-refresh 60s</label>
+      <button onclick="loadContracts(false)" class="border px-3 py-1 rounded hover:bg-gray-100">cache</button>
+      <button onclick="loadContracts(true)" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">live refresh</button>
+    </div>
+  </header>
+
+  <section class="flex flex-wrap items-end gap-3 text-xs">
+    <label>search
+      <input id="q" class="border rounded px-2 py-1 w-44" placeholder="BTC / BTCUSDT" oninput="render()">
+    </label>
+    <label>market cap
+      <select id="cap-filter" class="border rounded px-2 py-1" onchange="render()">
+        <option value="known" selected>known only</option>
+        <option value="all">include unknown</option>
+      </select>
+    </label>
+    <label>spot
+      <select id="spot-filter" class="border rounded px-2 py-1" onchange="render()">
+        <option value="all" selected>all</option>
+        <option value="spot">has spot</option>
+        <option value="perp">perp only</option>
+      </select>
+    </label>
+    <label>show
+      <select id="limit" class="border rounded px-2 py-1" onchange="render()">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="250">250</option>
+        <option value="0">all</option>
+      </select>
+    </label>
+    <div id="summary" class="text-gray-500 pb-1"></div>
+  </section>
+
+  <section class="bg-white border rounded overflow-hidden">
+    <table class="w-full text-xs">
+      <thead class="bg-gray-100 text-gray-700 uppercase">
+        <tr>
+          <th class="text-right">rank</th>
+          <th class="text-left">symbol</th>
+          <th class="text-right">market cap</th>
+          <th class="text-right">price</th>
+          <th class="text-right">24h%</th>
+          <th class="text-right">24h volume</th>
+          <th class="text-right">funding</th>
+          <th class="text-left">listing</th>
+        </tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="8" class="text-gray-400 p-4">loading…</td></tr></tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+const fmt = (n, d=2) => (n == null || isNaN(n)) ? '-' : Number(n).toFixed(d);
+const fmtPct = (n, d=2) => n == null ? '-' : (n >= 0 ? '+' : '') + fmt(n, d) + '%';
+const fmtCap = (n) => !n ? '-' : n >= 1e9 ? '$' + fmt(n/1e9,2)+'B' : n >= 1e6 ? '$' + fmt(n/1e6,2)+'M' : n >= 1e3 ? '$' + fmt(n/1e3,1)+'K' : '$' + fmt(n,0);
+const cls = (n) => n > 0 ? 'pos' : n < 0 ? 'neg' : 'neu';
+const age = (iso) => {
+  if (!iso) return 'never';
+  const sec = Math.max(0, Math.round((Date.now() - Date.parse(iso + 'Z')) / 1000));
+  if (sec < 90) return sec + 's ago';
+  const min = Math.round(sec / 60);
+  return min < 120 ? min + 'm ago' : Math.round(min / 60) + 'h ago';
+};
+
+let DATA = {rows: []};
+
+async function jsonFetch(url, timeoutMs=10000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {signal: ctl.signal});
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.detail || JSON.stringify(body));
+    return body;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadContracts(live=false) {
+  document.getElementById('meta').textContent = live ? 'refreshing live data…' : 'loading cached data…';
+  DATA = await jsonFetch('/api/contracts' + (live ? '?live=true' : ''), live ? 20000 : 5000);
+  render();
+}
+
+function render() {
+  const q = document.getElementById('q').value.trim().toUpperCase();
+  const capFilter = document.getElementById('cap-filter').value;
+  const spotFilter = document.getElementById('spot-filter').value;
+  const limit = Number(document.getElementById('limit').value);
+  let rows = DATA.rows || [];
+  if (q) rows = rows.filter(r => r.symbol.includes(q) || r.coin.includes(q));
+  if (capFilter === 'known') rows = rows.filter(r => Number(r.market_cap_usd || 0) > 0);
+  if (spotFilter === 'spot') rows = rows.filter(r => r.has_spot);
+  if (spotFilter === 'perp') rows = rows.filter(r => !r.has_spot);
+  const shown = limit > 0 ? rows.slice(0, limit) : rows;
+
+  document.getElementById('meta').innerHTML = DATA.error
+    ? `<span class="text-red-600">${DATA.error}</span>`
+    : `${DATA._cached ? 'cached' : 'live'} · updated ${age(DATA._cached_at || DATA.generated_at)} · source: approximate Binance marketCap`;
+  document.getElementById('summary').textContent =
+    `showing ${shown.length} / ${rows.length}; total ${DATA.total || 0}; unknown market cap ${DATA.unknown_market_cap || 0}`;
+
+  const tb = document.getElementById('rows');
+  if (!shown.length) {
+    tb.innerHTML = `<tr><td colspan="8" class="text-gray-400 p-4">no contracts</td></tr>`;
+    return;
+  }
+  tb.innerHTML = shown.map((r, idx) => `
+    <tr>
+      <td class="text-right text-gray-500">${r.market_cap_rank || '-'}</td>
+      <td>
+        <div class="font-semibold">${r.symbol}</div>
+        <div class="text-gray-400">${r.coin}</div>
+      </td>
+      <td class="text-right font-semibold">${fmtCap(r.market_cap_usd)}</td>
+      <td class="text-right">${fmt(Number(r.price), Number(r.price) >= 1 ? 4 : 8)}</td>
+      <td class="text-right ${cls(r.price_change_24h_pct)}">${fmtPct(r.price_change_24h_pct)}</td>
+      <td class="text-right">${fmtCap(r.volume_24h_usdt)}</td>
+      <td class="text-right ${cls(-r.funding_rate)}">${(Number(r.funding_rate || 0) * 100).toFixed(4)}%</td>
+      <td><span class="pill ${r.has_spot ? 'pill-spot' : 'pill-perp'}">${r.has_spot ? 'spot+perp' : 'perp only'}</span></td>
+    </tr>
+  `).join('');
+}
+
+loadContracts(false);
+setInterval(() => { if (document.getElementById('auto').checked) loadContracts(false); }, 60000);
+</script>
+</body>
+</html>

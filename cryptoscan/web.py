@@ -25,7 +25,13 @@ from .config import settings
 from .db import init_db, session_scope
 from .harness import HarnessAgent
 from .models import Episode
-from .runtime_state import KEY_ACCOUNT, KEY_POSITIONS, KEY_SCHEDULER, get_state
+from .runtime_state import (
+    KEY_ACCOUNT,
+    KEY_CONTRACT_RANKINGS,
+    KEY_POSITIONS,
+    KEY_SCHEDULER,
+    get_state,
+)
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
@@ -111,7 +117,39 @@ def api_runtime() -> dict[str, Any]:
         "scheduler": get_state(KEY_SCHEDULER),
         "account": meta(KEY_ACCOUNT),
         "positions": meta(KEY_POSITIONS),
+        "contracts": meta(KEY_CONTRACT_RANKINGS),
     }
+
+
+@app.get("/api/contracts")
+def api_contracts(live: bool = False, limit: int = 0) -> dict[str, Any]:
+    """Return Binance USDT perpetuals enriched with approximate spot market caps."""
+    init_db()
+    if live:
+        try:
+            from .tools.contract_rankings import build_contract_rankings
+
+            payload = build_contract_rankings(include_unknown=True)
+            payload["_cached"] = False
+        except Exception as e:
+            return {"rows": [], "error": str(e), "_cached": False}
+    else:
+        cached = get_state(KEY_CONTRACT_RANKINGS)
+        if cached:
+            payload = dict(cached["value"])
+            payload["_cached"] = True
+            payload["_cached_at"] = cached["updated_at"]
+        else:
+            return {
+                "rows": [],
+                "error": "contract ranking cache not ready; scheduler has not refreshed it yet",
+                "_cached": True,
+            }
+
+    rows = list(payload.get("rows") or [])
+    if limit and limit > 0:
+        payload["rows"] = rows[:limit]
+    return payload
 
 
 @app.get("/api/episodes")
@@ -298,6 +336,11 @@ def api_close(episode_id: str, reason: str = "manual_web") -> dict[str, Any]:
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     return (TEMPLATE_DIR / "dashboard.html").read_text(encoding="utf-8")
+
+
+@app.get("/contracts", response_class=HTMLResponse)
+def contracts_page() -> str:
+    return (TEMPLATE_DIR / "contracts.html").read_text(encoding="utf-8")
 
 
 def run(host: str = "127.0.0.1", port: int = 8765) -> None:
