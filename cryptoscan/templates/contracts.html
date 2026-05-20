@@ -47,6 +47,12 @@
         <option value="perp">perp only</option>
       </select>
     </label>
+    <label>sort
+      <select id="sort-order" class="border rounded px-2 py-1" onchange="render()">
+        <option value="desc" selected>market cap high to low</option>
+        <option value="asc">market cap low to high</option>
+      </select>
+    </label>
     <label>show
       <select id="limit" class="border rounded px-2 py-1" onchange="render()">
         <option value="50">50</option>
@@ -115,12 +121,23 @@ function render() {
   const q = document.getElementById('q').value.trim().toUpperCase();
   const capFilter = document.getElementById('cap-filter').value;
   const spotFilter = document.getElementById('spot-filter').value;
+  const sortOrder = document.getElementById('sort-order').value;
   const limit = Number(document.getElementById('limit').value);
   let rows = DATA.rows || [];
   if (q) rows = rows.filter(r => r.symbol.includes(q) || r.coin.includes(q));
   if (capFilter === 'known') rows = rows.filter(r => Number(r.market_cap_usd || 0) > 0);
   if (spotFilter === 'spot') rows = rows.filter(r => r.has_spot);
   if (spotFilter === 'perp') rows = rows.filter(r => !r.has_spot);
+  rows = [...rows].sort((a, b) => {
+    const av = Number(a.market_cap_usd || 0);
+    const bv = Number(b.market_cap_usd || 0);
+    if (sortOrder === 'asc') {
+      if (av <= 0 && bv > 0) return 1;
+      if (bv <= 0 && av > 0) return -1;
+      return av - bv;
+    }
+    return bv - av;
+  });
   const shown = limit > 0 ? rows.slice(0, limit) : rows;
 
   document.getElementById('meta').innerHTML = DATA.error

@@ -122,7 +122,7 @@ def api_runtime() -> dict[str, Any]:
 
 
 @app.get("/api/contracts")
-def api_contracts(live: bool = False, limit: int = 0) -> dict[str, Any]:
+def api_contracts(live: bool = False, limit: int = 0, order: str = "desc") -> dict[str, Any]:
     """Return Binance USDT perpetuals enriched with approximate spot market caps."""
     init_db()
     if live:
@@ -147,8 +147,17 @@ def api_contracts(live: bool = False, limit: int = 0) -> dict[str, Any]:
             }
 
     rows = list(payload.get("rows") or [])
+    if order not in {"asc", "desc"}:
+        raise HTTPException(400, "order must be asc or desc")
+    if order == "asc":
+        rows.sort(key=lambda r: (float(r.get("market_cap_usd") or 0) <= 0, float(r.get("market_cap_usd") or 0)))
+    else:
+        rows.sort(key=lambda r: float(r.get("market_cap_usd") or 0), reverse=True)
+    payload["order"] = order
     if limit and limit > 0:
         payload["rows"] = rows[:limit]
+    else:
+        payload["rows"] = rows
     return payload
 
 
