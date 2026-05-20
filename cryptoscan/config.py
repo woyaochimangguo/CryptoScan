@@ -28,16 +28,19 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str = ""
+    llm_profile: str = ""  # optional default profile name for all LLM roles
 
     # Decision-role LLM (gets the full ReAct + tools + memory context)
     llm_decision_model: str = ""
     llm_decision_base_url: str = ""
     llm_decision_api_key: str = ""
+    llm_decision_profile: str = ""
 
     # Reflection-role LLM (simple JSON post-mortem; safe to use a cheap model)
     llm_reflection_model: str = ""
     llm_reflection_base_url: str = ""
     llm_reflection_api_key: str = ""
+    llm_reflection_profile: str = ""
 
     # 6551 MCP servers
     opennews_token: str = ""

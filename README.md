@@ -83,6 +83,22 @@ Both processes share `data/cryptoscan.db`; SQLite runs in WAL mode so scheduler 
   cryptoscan self-test --llm     # smoke-test LLM policy with a fake snapshot
   cryptoscan scan --llm          # use LLM for real signals
   ```
+  Opening decisions use the `decision` LLM route. Check it with:
+  ```bash
+  cryptoscan llm-routing
+  ```
+  For quick model switching, define profiles in `.env`:
+  ```env
+  LLM_DECISION_PROFILE=minimax
+  LLM_PROFILE_MINIMAX_MODEL=coding-minimax-m2.7-free
+  LLM_PROFILE_MINIMAX_BASE_URL=https://aihubmix.com/v1
+  LLM_PROFILE_MINIMAX_API_KEY=...
+
+  LLM_PROFILE_DEEPSEEK_MODEL=deepseek-chat
+  LLM_PROFILE_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+  LLM_PROFILE_DEEPSEEK_API_KEY=...
+  ```
+  Then switch opening-decision models by changing only `LLM_DECISION_PROFILE`.
   The LLM may call: `get_oi_history`, `get_long_short_ratio`, `get_square_hashtag`,
   `get_spot_listed`, then **must** finalize via `submit_decision`. All tool calls and
   the final rationale are persisted to the Episode for replay/review.

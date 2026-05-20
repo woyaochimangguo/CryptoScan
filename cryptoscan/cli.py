@@ -339,6 +339,16 @@ def doctor() -> None:
             console.print(f"[red]FAIL[/red]  {url}  ({type(e).__name__}: {e})")
 
 
+@app.command("llm-routing")
+def llm_routing() -> None:
+    """Show effective LLM model routing and configured switchable profiles."""
+    from .llm_clients import describe_profiles, describe_routing
+    console.rule("effective routing")
+    console.print(describe_routing())
+    console.rule("configured profiles")
+    console.print(describe_profiles())
+
+
 @app.command("self-test")
 def self_test(llm: bool = False, verbose: bool = True, fresh: bool = False) -> None:
     """Inject a fake signal end-to-end (no network) — verifies harness + DB + render.

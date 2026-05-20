@@ -292,7 +292,8 @@ def job_auto_execute() -> None:
 def job_auto_reflect() -> None:
     """Scan recently-closed episodes with empty reflection and ask the LLM
     to write one. Bounded per tick so a burst of closes can't monopolize."""
-    if not settings.openai_api_key and not settings.llm_base_url:
+    from .llm_clients import is_configured
+    if not is_configured("reflection"):
         return  # no LLM configured
     from .harness.memory import auto_reflect_episode
 
@@ -387,7 +388,8 @@ def run(consensus_only_notify: bool = True) -> None:
         log.info("position_watch disabled (no testnet credentials)")
 
     # Auto-reflection job (runs regardless of testnet; only needs an LLM)
-    if settings.openai_api_key or settings.llm_base_url:
+    from .llm_clients import is_configured
+    if is_configured("reflection"):
         sch.add_job(
             job_auto_reflect,
             "interval",

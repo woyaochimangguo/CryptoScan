@@ -190,11 +190,35 @@ class LLMPolicy:
         from ..llm_clients import resolve
         return resolve("decision").model
 
+    def _resolved_route_trace(self, model: str) -> dict[str, Any]:
+        if self.model or self.base_url or self.api_key:
+            return {
+                "name": "llm_config",
+                "role": "decision",
+                "model": model,
+                "base_url": (self.base_url or settings.llm_base_url) or "api.openai.com",
+                "profile": None,
+                "source": "policy_override",
+                "step": -1,
+            }
+        from ..llm_clients import resolve
+        cfg = resolve("decision")
+        return {
+            "name": "llm_config",
+            "role": "decision",
+            "model": cfg.model,
+            "base_url": cfg.base_url or "api.openai.com",
+            "profile": cfg.profile,
+            "source": "routing",
+            "step": -1,
+        }
+
     def __call__(self, snapshot: dict[str, Any]) -> Decision:
         self.tools_called = []
         self.similar_episode_ids = []
         client = self._client()
         model = self._resolved_model()
+        self.tools_called.append(self._resolved_route_trace(model))
 
         # Pull a few closed past episodes for this symbol/pattern and inline
         # them as a compact "memory" block the model can ground its reasoning on.
