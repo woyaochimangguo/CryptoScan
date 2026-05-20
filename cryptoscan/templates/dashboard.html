@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>cryptoscan</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pos { color: #16a34a; } .neg { color: #dc2626; } .neu { color: #6b7280; }
+  table { font-variant-numeric: tabular-nums; }
+  td, th { padding: 0.4rem 0.6rem; }
+  tr:hover { background: #f9fafb; }
+  .pill { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+  .pill-long { background:#dcfce7; color:#15803d; }
+  .pill-short{ background:#fee2e2; color:#b91c1c; }
+  .pill-watch{ background:#fef9c3; color:#a16207; }
+  .pill-skip { background:#f3f4f6; color:#6b7280; }
+  .pill-tag  { background:#e0e7ff; color:#3730a3; margin-right:3px; }
+  .pill-agree    { background:#bbf7d0; color:#14532d; font-weight: 600; }
+  .pill-disagree { background:#fed7aa; color:#9a3412; }
+  details summary { cursor: pointer; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+
+<div class="max-w-7xl mx-auto p-6 space-y-6">
+
+  <header class="flex items-center justify-between border-b pb-3">
+    <div>
+      <h1 class="text-2xl font-semibold">cryptoscan dashboard</h1>
+      <div id="updated" class="text-xs text-gray-500 mt-1">loading…</div>
+      <div id="runtime" class="text-xs text-gray-500 mt-1">scheduler/cache: …</div>
+    </div>
+    <div class="flex items-center gap-3 text-xs">
+      <label class="flex items-center gap-1"><input id="auto" type="checkbox" checked> auto-refresh 10s</label>
+      <button onclick="refresh()" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">refresh</button>
+    </div>
+  </header>
+
+  <!-- Account + positions -->
+  <section>
+    <h2 class="text-lg font-semibold mb-2">testnet · paper account</h2>
+    <div id="acct" class="bg-white border rounded p-4 mb-3 text-sm">…</div>
+    <div class="bg-white border rounded overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-100 text-gray-700 text-xs uppercase">
+          <tr><th class="text-left">symbol</th><th class="text-left">side</th>
+              <th class="text-right">qty</th><th class="text-right">entry</th>
+              <th class="text-right">mark</th><th class="text-right">uPnL</th>
+              <th></th></tr>
+        </thead>
+        <tbody id="positions"><tr><td colspan="7" class="text-gray-400 p-4">loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Pattern stats -->
+  <section>
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold">pattern stats (closed trades)</h2>
+      <div class="text-xs">
+        window:
+        <select id="stats-days" class="border rounded px-2 py-1" onchange="loadStats()">
+          <option value="7">7d</option>
+          <option value="14">14d</option>
+          <option value="30" selected>30d</option>
+          <option value="90">90d</option>
+        </select>
+      </div>
+    </div>
+    <div id="stats-overall" class="bg-white border rounded p-4 mb-3 text-sm">…</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="bg-white border rounded overflow-hidden">
+        <div class="bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 uppercase">by signal tag</div>
+        <table class="w-full text-xs"><tbody id="stats-tag"></tbody></table>
+      </div>
+      <div class="bg-white border rounded overflow-hidden">
+        <div class="bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 uppercase">by symbol</div>
+        <table class="w-full text-xs"><tbody id="stats-symbol"></tbody></table>
+      </div>
+      <div class="bg-white border rounded overflow-hidden">
+        <div class="bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 uppercase">by exit reason</div>
+        <table class="w-full text-xs"><tbody id="stats-exit"></tbody></table>
+      </div>
+      <div class="bg-white border rounded overflow-hidden">
+        <div class="bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 uppercase">by trigger</div>
+        <table class="w-full text-xs"><tbody id="stats-trigger"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Episodes -->
+  <section>
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold">episodes (last 48h)</h2>
+      <div class="text-xs">
+        <label>filter:
+          <select id="filter" class="border rounded px-2 py-1">
+            <option value="all">all</option>
+            <option value="long_short" selected>long/short only</option>
+            <option value="executed">executed</option>
+            <option value="closed">closed</option>
+            <option value="agree">consensus only</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="bg-white border rounded overflow-hidden">
+      <table class="w-full text-xs">
+        <thead class="bg-gray-100 text-gray-700 uppercase">
+          <tr>
+            <th class="text-left">time</th>
+            <th class="text-left">symbol</th>
+            <th class="text-left">decision</th>
+            <th class="text-right">conf</th>
+            <th class="text-right">price</th>
+            <th class="text-right">24h</th>
+            <th class="text-right">funding</th>
+            <th class="text-right">OI Δ</th>
+            <th class="text-right">mcap</th>
+            <th class="text-left">tags</th>
+            <th class="text-right">PnL</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="episodes"><tr><td colspan="12" class="text-gray-400 p-4">loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Detail drawer -->
+  <section id="detail-section" class="hidden">
+    <h2 class="text-lg font-semibold mb-2">episode detail</h2>
+    <div id="detail" class="bg-white border rounded p-5 space-y-4 text-sm"></div>
+  </section>
+
+</div>
+
+<script>
+const fmt = (n, d=2) => (n == null || isNaN(n)) ? '-' : Number(n).toFixed(d);
+const fmtPct = (n, d=2) => n == null ? '-' : (n >= 0 ? '+' : '') + fmt(n, d) + '%';
+const fmtUSD = (n) => n == null ? '-' : '$' + fmt(n, 2);
+const fmtCap = (n) => !n ? '-' : n >= 1e9 ? '$' + fmt(n/1e9,1)+'B' : n >= 1e6 ? '$' + fmt(n/1e6,1)+'M' : '$' + fmt(n/1e3,0)+'k';
+const cls = (n) => n > 0 ? 'pos' : n < 0 ? 'neg' : 'neu';
+const age = (iso) => {
+  if (!iso) return 'never';
+  const sec = Math.max(0, Math.round((Date.now() - Date.parse(iso + 'Z')) / 1000));
+  if (sec < 90) return sec + 's ago';
+  const min = Math.round(sec / 60);
+  return min < 120 ? min + 'm ago' : Math.round(min / 60) + 'h ago';
+};
+
+async function jsonFetch(url, opts={}, timeoutMs=4000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {...opts, signal: ctl.signal});
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.detail || JSON.stringify(body));
+    return body;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadAcct() {
+  const el = document.getElementById('acct');
+  let a;
+  try {
+    a = await jsonFetch('/api/account');
+  } catch (err) {
+    el.innerHTML = `<span class='text-red-600'>account unavailable: ${String(err.message || err)}</span>`;
+    return;
+  }
+  if (a.error) { el.innerHTML = `<span class='text-red-600'>${a.error}</span>`; return; }
+  el.innerHTML = `<span class='text-gray-500'>balance</span>
+    <span class='font-semibold ml-1'>${fmtUSD(a.total_usdt)}</span>
+    &nbsp; <span class='text-gray-500'>free</span> ${fmtUSD(a.free_usdt)}
+    &nbsp; <span class='text-gray-500'>used</span> ${fmtUSD(a.used_usdt)}
+    ${a._cached_at ? `&nbsp; <span class='text-gray-400'>cached ${age(a._cached_at)}</span>` : ''}`;
+}
+
+async function loadPositions() {
+  const tb = document.getElementById('positions');
+  let rows;
+  try {
+    rows = await jsonFetch('/api/positions');
+  } catch (err) {
+    tb.innerHTML = `<tr><td colspan='7' class='text-red-600 p-3'>positions unavailable: ${String(err.message || err)}</td></tr>`;
+    return;
+  }
+  if (!rows.length) { tb.innerHTML = `<tr><td colspan='7' class='text-gray-400 p-3'>no open positions</td></tr>`; return; }
+  if (rows[0].error) { tb.innerHTML = `<tr><td colspan='7' class='text-red-600 p-3'>${rows[0].error}</td></tr>`; return; }
+  tb.innerHTML = rows.map(p => `
+    <tr>
+      <td class='font-semibold'>${p.symbol}</td>
+      <td><span class='pill pill-${p.side}'>${p.side}</span></td>
+      <td class='text-right'>${fmt(p.contracts, 4)}</td>
+      <td class='text-right'>${fmt(p.entry_price, 6)}</td>
+      <td class='text-right'>${fmt(p.mark_price, 6)}</td>
+      <td class='text-right ${cls(p.unrealized_pnl)}'>${fmtUSD(p.unrealized_pnl)}</td>
+      <td></td>
+    </tr>`).join('');
+}
+
+let LAST_EPS = [];
+async function loadEpisodes() {
+  const eps = await jsonFetch('/api/episodes?hours=48&limit=200');
+  LAST_EPS = eps;
+  renderEpisodes();
+}
+
+function renderEpisodes() {
+  const filter = document.getElementById('filter').value;
+  let eps = LAST_EPS;
+  if (filter === 'long_short') eps = eps.filter(e => e.decision === 'long' || e.decision === 'short');
+  if (filter === 'executed') eps = eps.filter(e => e.executed);
+  if (filter === 'closed') eps = eps.filter(e => e.closed_at);
+  if (filter === 'agree') eps = eps.filter(e => (e.tags||[]).some(t => t.startsWith('dual:agree')));
+  const tb = document.getElementById('episodes');
+  if (!eps.length) { tb.innerHTML = `<tr><td colspan='12' class='text-gray-400 p-3'>no episodes</td></tr>`; return; }
+  tb.innerHTML = eps.map(ep => {
+    const t = new Date(ep.created_at + 'Z').toLocaleString();
+    const pillD = `pill pill-${ep.decision}`;
+    const tags = (ep.tags||[]).map(tag => {
+      if (tag.startsWith('dual:agree')) return `<span class='pill pill-agree'>${tag}</span>`;
+      if (tag.startsWith('dual:disagree')) return `<span class='pill pill-disagree'>${tag}</span>`;
+      return `<span class='pill pill-tag'>${tag}</span>`;
+    }).join(' ');
+    const action = ep.decision === 'long' || ep.decision === 'short'
+      ? (ep.executed ? (ep.closed_at ? '' : `<button onclick="closePos('${ep.id}')" class='text-orange-600 underline'>close</button>`)
+                     : `<button onclick="execPos('${ep.id}')" class='text-blue-600 underline'>paper</button>`)
+      : '';
+    const pnl = ep.pnl_pct != null
+      ? `<span class='${cls(ep.pnl_pct)}'>${fmtPct(ep.pnl_pct)}</span>`
+      : (ep.executed ? '<span class="text-gray-400">open</span>' : '-');
+    return `
+      <tr class='cursor-pointer' onclick="showDetail('${ep.id}')">
+        <td class='whitespace-nowrap'>${t}</td>
+        <td class='font-semibold'>${ep.symbol}</td>
+        <td><span class='${pillD}'>${ep.decision}</span></td>
+        <td class='text-right'>${fmt(ep.confidence, 2)}</td>
+        <td class='text-right'>${fmt(ep.price, 6)}</td>
+        <td class='text-right ${cls(ep.price_chg_24h)}'>${fmtPct(ep.price_chg_24h, 1)}</td>
+        <td class='text-right ${cls(-(ep.curr_funding||0))}'>${ep.curr_funding != null ? (ep.curr_funding*100).toFixed(4)+'%' : '-'}</td>
+        <td class='text-right ${cls(ep.oi_change_pct)}'>${fmtPct(ep.oi_change_pct, 1)}</td>
+        <td class='text-right'>${fmtCap(ep.market_cap_usd)}</td>
+        <td>${tags}</td>
+        <td class='text-right'>${pnl}</td>
+        <td onclick='event.stopPropagation()'>${action}</td>
+      </tr>`;
+  }).join('');
+}
+
+function renderDetail(d) {
+  const plan = d.entry_plan || {};
+  const ae = d.actual_entry || {};
+  const ax = d.actual_exit || {};
+  const snap = d.snapshot || {};
+  const slPctRaw = plan.stop_loss_pct;
+  const slPct = slPctRaw != null ? Math.abs(slPctRaw) : null;
+  const tps = Array.isArray(plan.take_profit_pct) ? plan.take_profit_pct : [];
+  const entryPx = ae.price ?? snap.price;
+  const side = plan.side || d.decision;
+  const sign = side === 'short' ? -1 : 1;
+  const slAbs = entryPx && slPct != null ? entryPx * (1 - sign * slPct/100) : null;
+  const tpAbs = entryPx ? tps.map(p => entryPx * (1 + sign * p/100)) : [];
+
+  const tags = (d.tags || []).map(t => {
+    const k = t.startsWith('dual:agree') ? 'pill-agree'
+            : t.startsWith('dual:disagree') ? 'pill-disagree'
+            : 'pill-tag';
+    return `<span class='pill ${k}'>${t}</span>`;
+  }).join(' ');
+
+  const calls = (d.tools_called || []).map((c,i)=>{
+    const args = JSON.stringify(c.args || c.arguments || c.input || c, null, 2);
+    return `<details class='border rounded p-2'><summary class='text-xs text-gray-600'>step ${i+1}: ${c.name||c.tool||c.function?.name||'call'}</summary>
+      <pre class='text-xs mt-1 overflow-x-auto'>${args}</pre></details>`;
+  }).join('');
+
+  const lessons = (d.lessons || []).map(l => `<li>${l}</li>`).join('');
+
+  const execClose = (() => {
+    if (d.decision !== 'long' && d.decision !== 'short') return '';
+    if (!d.executed) {
+      return `<button onclick="execPos('${d.id}')" class='bg-blue-600 text-white px-3 py-1.5 rounded'>paper trade</button>`;
+    }
+    if (!d.closed_at) {
+      return `<div class='flex gap-2 items-center'>
+        <input id='closeReason' placeholder='close reason (e.g. tp1, sl, manual)' class='border rounded px-2 py-1 flex-1'>
+        <button onclick="closePosWithReason('${d.id}')" class='bg-orange-600 text-white px-3 py-1.5 rounded'>close</button>
+      </div>`;
+    }
+    return `<span class='text-gray-500 text-xs'>closed @ ${ax.price} (${ax.reason}) — pnl <b class='${cls(d.pnl_pct)}'>${fmtPct(d.pnl_pct)}</b></span>`;
+  })();
+
+  document.getElementById('detail').innerHTML = `
+    <div class='flex justify-between items-start'>
+      <div>
+        <div class='text-xs text-gray-500'>${d.id} · ${new Date(d.created_at+'Z').toLocaleString()}</div>
+        <div class='text-2xl font-semibold mt-1'>${d.symbol}
+          <span class='pill pill-${d.decision} ml-2 align-middle'>${d.decision}</span>
+          <span class='text-sm text-gray-500 ml-1'>conf ${fmt(d.confidence,2)}</span>
+        </div>
+      </div>
+      <div>${execClose}</div>
+    </div>
+
+    <div class='mt-1'>${tags}</div>
+
+    <div class='grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-gray-50 p-3 rounded'>
+      <div><div class='text-gray-500'>price</div><div class='font-semibold'>${fmt(snap.price,6)}</div></div>
+      <div><div class='text-gray-500'>24h chg</div><div class='${cls(snap.price_chg_24h)} font-semibold'>${fmtPct(snap.price_chg_24h,1)}</div></div>
+      <div><div class='text-gray-500'>vol 24h</div><div>${fmtCap(snap.volume_24h)}</div></div>
+      <div><div class='text-gray-500'>market cap</div><div>${fmtCap(snap.market_cap_usd)}</div></div>
+      <div><div class='text-gray-500'>funding (was→now)</div><div>${(snap.prev_funding*100||0).toFixed(4)}% → <b class='${cls(-(snap.curr_funding||0))}'>${(snap.curr_funding*100||0).toFixed(4)}%</b></div></div>
+      <div><div class='text-gray-500'>OI change</div><div class='${cls(snap.oi_change_pct)} font-semibold'>${fmtPct(snap.oi_change_pct,1)}</div></div>
+      <div><div class='text-gray-500'>has spot</div><div>${snap.has_spot ? 'yes' : 'no'}</div></div>
+      <div><div class='text-gray-500'>square attention</div><div>${snap.square_posts||0} posts · ${(snap.square_views||0).toLocaleString()} views</div></div>
+    </div>
+
+    <div>
+      <div class='font-semibold text-gray-700'>📋 entry rationale</div>
+      <div class='whitespace-pre-wrap text-gray-800 mt-1'>${(d.rationale||'').replace(/</g,'&lt;')}</div>
+    </div>
+
+    <div class='grid grid-cols-2 gap-4'>
+      <div class='border rounded p-3'>
+        <div class='font-semibold text-gray-700 mb-1'>🎯 plan</div>
+        <div>side: <b>${side}</b> · timeframe: ${plan.timeframe||'-'} · size: ${plan.size_pct ? (plan.size_pct*100).toFixed(1)+'%' : '-'}</div>
+        ${entryPx ? `<div class='mt-1'>entry: <b>${fmt(entryPx,6)}</b></div>` : ''}
+        ${slAbs != null ? `<div class='neg mt-1'>SL: <b>${fmt(slAbs,6)}</b> <span class='text-xs text-gray-500'>(-${slPct.toFixed(1)}%)</span></div>` : ''}
+        ${tpAbs.length ? tpAbs.map((p,i)=>`<div class='pos'>TP${i+1}: <b>${fmt(p,6)}</b> <span class='text-xs text-gray-500'>(+${tps[i]}%)</span></div>`).join('') : ''}
+      </div>
+
+      <div class='border rounded p-3'>
+        <div class='font-semibold text-gray-700 mb-1'>🪙 actual fills</div>
+        ${d.executed
+          ? `<div>entry: <b>${fmt(ae.price,6)}</b> · qty ${fmt(ae.size,4)} ${ae.paper?'<span class="pill pill-tag">paper</span>':''}</div>
+             ${ae.order_id?`<div class='text-xs text-gray-500'>order ${ae.order_id} · ${ae.leverage||'?'}x · notional ${fmtUSD(ae.notional_usdt)}</div>`:''}`
+          : `<div class='text-gray-400'>not executed</div>`}
+        ${ax.price ? `<div class='mt-2'>exit: <b>${fmt(ax.price,6)}</b> · reason: <i>${ax.reason||'-'}</i></div>` : ''}
+        ${d.pnl_pct != null ? `<div class='mt-1'>pnl: <b class='${cls(d.pnl_pct)}'>${fmtPct(d.pnl_pct)}</b> · outcome: ${d.outcome_label||'-'}</div>` : ''}
+      </div>
+    </div>
+
+    ${calls ? `<div><div class='font-semibold text-gray-700 mb-1'>🤖 LLM tool trace (${(d.tools_called||[]).length} calls)</div>${calls}</div>` : ''}
+
+    <div class='border-t pt-3'>
+      <div class='font-semibold text-gray-700 mb-1'>📝 reflection ${d.reflection?'<span class="pill pill-tag">saved</span>':''}</div>
+      <textarea id='refl' class='w-full border rounded p-2 text-xs' rows='3' placeholder='Post-trade thoughts: what worked, what didn\\'t, signal strength, etc.'>${(d.reflection||'').replace(/</g,'&lt;')}</textarea>
+      <div class='flex gap-2 items-center mt-2'>
+        <input id='lessons' class='border rounded px-2 py-1 flex-1 text-xs' placeholder='comma-separated lessons (e.g. "wait for confirmation, avoid micro-cap")' value='${(d.lessons||[]).join(", ")}'>
+        <button onclick="saveAnnotate('${d.id}')" class='bg-gray-700 text-white px-3 py-1 rounded text-xs'>save reflection</button>
+      </div>
+      ${lessons ? `<ul class='list-disc list-inside text-xs text-gray-600 mt-2'>${lessons}</ul>` : ''}
+    </div>
+
+    <details class='text-xs'><summary class='text-gray-400'>raw json</summary>
+      <pre class='whitespace-pre-wrap text-gray-500 mt-2 overflow-x-auto'>${JSON.stringify(d,null,2)}</pre>
+    </details>
+  `;
+}
+
+async function showDetail(id) {
+  const d = await jsonFetch('/api/episode/' + id);
+  document.getElementById('detail-section').classList.remove('hidden');
+  renderDetail(d);
+  document.getElementById('detail-section').scrollIntoView({behavior:'smooth'});
+  window._lastDetailId = id;
+}
+
+async function closePosWithReason(id) {
+  const reason = document.getElementById('closeReason')?.value?.trim() || 'manual_web';
+  let j;
+  try {
+    j = await jsonFetch(`/api/close/${id}?reason=${encodeURIComponent(reason)}`, {method:'POST'}, 15000);
+  } catch (err) {
+    alert('failed: ' + String(err.message || err)); return;
+  }
+  alert(`closed @ ${j.exit_price}  pnl ${j.pnl_pct?.toFixed(2)}%  (${reason})`);
+  await refresh();
+  showDetail(id);
+}
+
+async function saveAnnotate(id) {
+  const refl = document.getElementById('refl').value;
+  const less = document.getElementById('lessons').value;
+  try {
+    await jsonFetch(`/api/annotate/${id}?reflection=${encodeURIComponent(refl)}&lessons=${encodeURIComponent(less)}`, {method:'POST'});
+  } catch (err) {
+    alert('save failed: ' + String(err.message || err)); return;
+  }
+  alert('reflection saved');
+  showDetail(id);
+}
+
+async function execPos(id) {
+  const size = prompt('size USDT?', '100'); if (!size) return;
+  const lev = prompt('leverage?', '5'); if (!lev) return;
+  let j;
+  try {
+    j = await jsonFetch(`/api/exec/${id}?size_usdt=${size}&leverage=${lev}`, {method:'POST'}, 15000);
+  } catch (err) {
+    alert('failed: ' + String(err.message || err)); return;
+  }
+  alert(`filled @ ${j.avg_price}  qty ${j.qty}`);
+  refresh();
+}
+
+async function closePos(id) {
+  if (!confirm('close paper position?')) return;
+  let j;
+  try {
+    j = await jsonFetch(`/api/close/${id}`, {method:'POST'}, 15000);
+  } catch (err) {
+    alert('failed: ' + String(err.message || err)); return;
+  }
+  alert(`closed @ ${j.exit_price}  pnl ${j.pnl_pct?.toFixed(2)}%`);
+  refresh();
+}
+
+function renderStatsTable(rows, tbodyId, keyLabel) {
+  const tb = document.getElementById(tbodyId);
+  if (!rows || !rows.length) { tb.innerHTML = `<tr><td class='text-gray-400 p-3'>no data</td></tr>`; return; }
+  tb.innerHTML = `<tr class='text-gray-500'>
+      <th class='text-left'>${keyLabel}</th>
+      <th class='text-right'>n</th>
+      <th class='text-right'>win%</th>
+      <th class='text-right'>avg PnL</th>
+      <th class='text-right'>best</th>
+      <th class='text-right'>worst</th>
+    </tr>` + rows.slice(0, 10).map(r => `
+    <tr>
+      <td class='font-semibold'>${r.key}</td>
+      <td class='text-right'>${r.n}</td>
+      <td class='text-right ${r.win_rate >= 0.5 ? 'pos' : r.n >= 3 ? 'neg' : 'neu'}'>${fmt(r.win_rate*100, 0)}%
+          <span class='text-gray-400'>(${r.wins}/${r.n})</span></td>
+      <td class='text-right ${cls(r.avg_pnl)}'>${fmtPct(r.avg_pnl)}</td>
+      <td class='text-right ${cls(r.best)}'>${fmtPct(r.best)}</td>
+      <td class='text-right ${cls(r.worst)}'>${fmtPct(r.worst)}</td>
+    </tr>`).join('');
+}
+
+async function loadStats() {
+  const days = document.getElementById('stats-days').value;
+  const s = await jsonFetch(`/api/stats/patterns?days=${days}`);
+  const o = s.overall || {};
+  document.getElementById('stats-overall').innerHTML = o.n
+    ? `<span class='text-gray-500'>closed trades last ${s.since_days}d:</span>
+       <span class='font-semibold ml-1'>${o.n}</span>
+       &nbsp;<span class='text-gray-500'>win-rate</span>
+       <span class='font-semibold ${o.win_rate >= 0.5 ? 'pos' : 'neg'}'>${fmt(o.win_rate*100, 0)}%</span>
+       <span class='text-gray-400'>(${o.wins}W / ${o.losses}L / ${o.breakevens}BE)</span>
+       &nbsp;<span class='text-gray-500'>avg PnL</span>
+       <span class='font-semibold ${cls(o.avg_pnl)}'>${fmtPct(o.avg_pnl)}</span>
+       &nbsp;<span class='text-gray-500'>total</span>
+       <span class='font-semibold ${cls(o.total_pnl)}'>${fmtPct(o.total_pnl)}</span>`
+    : `<span class='text-gray-400'>no closed trades in the last ${s.since_days} days</span>`;
+  renderStatsTable(s.by_tag, 'stats-tag', 'tag');
+  renderStatsTable(s.by_symbol, 'stats-symbol', 'symbol');
+  renderStatsTable(s.by_exit_reason, 'stats-exit', 'exit reason');
+  renderStatsTable(s.by_trigger, 'stats-trigger', 'trigger');
+}
+
+async function loadRuntime() {
+  const el = document.getElementById('runtime');
+  try {
+    const r = await jsonFetch('/api/runtime');
+    const sched = r.scheduler?.value || {};
+    const schedAt = r.scheduler?.updated_at;
+    const acctAt = r.account?.updated_at;
+    const posAt = r.positions?.updated_at;
+    el.innerHTML = `scheduler <span class='font-semibold'>${sched.status || 'unknown'}</span>${schedAt ? ` (${age(schedAt)})` : ''}
+      · account cache ${age(acctAt)}
+      · positions cache ${age(posAt)}`;
+  } catch (err) {
+    el.innerHTML = `<span class='text-red-600'>runtime unavailable: ${String(err.message || err)}</span>`;
+  }
+}
+
+async function refresh() {
+  document.getElementById('updated').textContent = 'updating…';
+  await Promise.allSettled([loadAcct(), loadPositions(), loadEpisodes(), loadStats(), loadRuntime()]);
+  document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+
+document.getElementById('filter').addEventListener('change', renderEpisodes);
+refresh();
+setInterval(() => { if (document.getElementById('auto').checked) refresh(); }, 10000);
+</script>
+</body>
+</html>
