@@ -12,6 +12,7 @@
   .pos { color: #16a34a; } .neg { color: #dc2626; } .neu { color: #6b7280; }
   .pill { display:inline-block; padding:1px 6px; border-radius:4px; font-size:11px; }
   .pill-spot { background:#dcfce7; color:#15803d; }
+  .pill-underlying { background:#dbeafe; color:#1d4ed8; }
   .pill-perp { background:#f3f4f6; color:#6b7280; }
 </style>
 </head>
@@ -40,10 +41,11 @@
         <option value="all">include unknown</option>
       </select>
     </label>
-    <label>spot
+    <label>listing
       <select id="spot-filter" class="border rounded px-2 py-1" onchange="render()">
         <option value="all" selected>all</option>
-        <option value="spot">has spot</option>
+        <option value="spot">spot+perp</option>
+        <option value="underlying">underlying spot</option>
         <option value="perp">perp only</option>
       </select>
     </label>
@@ -126,8 +128,9 @@ function render() {
   let rows = DATA.rows || [];
   if (q) rows = rows.filter(r => r.symbol.includes(q) || r.coin.includes(q));
   if (capFilter === 'known') rows = rows.filter(r => Number(r.market_cap_usd || 0) > 0);
-  if (spotFilter === 'spot') rows = rows.filter(r => r.has_spot);
-  if (spotFilter === 'perp') rows = rows.filter(r => !r.has_spot);
+  if (spotFilter === 'spot') rows = rows.filter(r => r.listing_type === 'spot_perp');
+  if (spotFilter === 'underlying') rows = rows.filter(r => r.listing_type === 'underlying_spot');
+  if (spotFilter === 'perp') rows = rows.filter(r => r.listing_type === 'perp_only');
   rows = [...rows].sort((a, b) => {
     const av = Number(a.market_cap_usd || 0);
     const bv = Number(b.market_cap_usd || 0);
@@ -144,7 +147,7 @@ function render() {
     ? `<span class="text-red-600">${DATA.error}</span>`
     : `${DATA._cached ? 'cached' : 'live'} · updated ${age(DATA._cached_at || DATA.generated_at)} · source: approximate Binance marketCap`;
   document.getElementById('summary').textContent =
-    `showing ${shown.length} / ${rows.length}; total ${DATA.total || 0}; unknown market cap ${DATA.unknown_market_cap || 0}`;
+    `showing ${shown.length} / ${rows.length}; total ${DATA.total || 0}; spot+perp ${DATA.exact_spot_count || 0}; underlying spot ${DATA.underlying_spot_count || 0}; perp only ${DATA.perp_only_count || 0}`;
 
   const tb = document.getElementById('rows');
   if (!shown.length) {
@@ -163,7 +166,7 @@ function render() {
       <td class="text-right ${cls(r.price_change_24h_pct)}">${fmtPct(r.price_change_24h_pct)}</td>
       <td class="text-right">${fmtCap(r.volume_24h_usdt)}</td>
       <td class="text-right ${cls(-r.funding_rate)}">${(Number(r.funding_rate || 0) * 100).toFixed(4)}%</td>
-      <td><span class="pill ${r.has_spot ? 'pill-spot' : 'pill-perp'}">${r.has_spot ? 'spot+perp' : 'perp only'}</span></td>
+      <td><span class="pill ${r.listing_type === 'perp_only' ? 'pill-perp' : r.listing_type === 'underlying_spot' ? 'pill-underlying' : 'pill-spot'}">${r.listing_label || (r.has_spot ? 'spot+perp' : 'perp only')}</span></td>
     </tr>
   `).join('');
 }

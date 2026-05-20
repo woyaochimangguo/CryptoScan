@@ -142,7 +142,7 @@ def contracts_by_market_cap(
     table.add_column("24h%", justify="right")
     table.add_column("volume", justify="right")
     table.add_column("funding", justify="right")
-    table.add_column("spot")
+    table.add_column("listing")
     for idx, row in enumerate(shown, start=1):
         table.add_row(
             str(idx),
@@ -152,7 +152,7 @@ def contracts_by_market_cap(
             f"{float(row['price_change_24h_pct']):+.2f}%",
             _fmt_usd(row["volume_24h_usdt"]),
             f"{float(row['funding_rate']):+.4%}",
-            "yes" if row["has_spot"] else "-",
+            str(row.get("listing_label") or ("spot+perp" if row.get("has_spot") else "perp only")),
         )
     console.print(table)
     console.print(

@@ -62,6 +62,20 @@ def perp_symbols() -> list[str]:
     return _ttl_cache("perp_symbols", 600, _produce)
 
 
+def perp_symbol_details() -> dict[str, dict]:
+    """Active USDT-margined perpetual exchangeInfo rows keyed by symbol."""
+    def _produce() -> dict[str, dict]:
+        info = _get(f"{FAPI}/fapi/v1/exchangeInfo")
+        return {
+            s["symbol"]: s
+            for s in info.get("symbols", [])
+            if s.get("contractType") == "PERPETUAL"
+            and s.get("quoteAsset") == "USDT"
+            and s.get("status") == "TRADING"
+        }
+    return _ttl_cache("perp_symbol_details", 600, _produce)
+
+
 @tool("binance.perp_tickers", "Get 24h ticker for all USDT perps as {symbol: ticker_dict}.")
 def perp_tickers() -> dict[str, dict]:
     return _ttl_cache("perp_tickers", 30,
@@ -100,6 +114,18 @@ def spot_symbols() -> set[str]:
             if s.get("quoteAsset") == "USDT" and s.get("status") == "TRADING"
         }
     return _ttl_cache("spot_symbols", 600, _produce)
+
+
+def spot_usdt_pairs() -> set[str]:
+    """Exact Binance Spot symbols quoted in USDT, e.g. BTCUSDT."""
+    def _produce() -> set[str]:
+        info = _get(f"{SAPI}/api/v3/exchangeInfo")
+        return {
+            s["symbol"]
+            for s in info.get("symbols", [])
+            if s.get("quoteAsset") == "USDT" and s.get("status") == "TRADING"
+        }
+    return _ttl_cache("spot_usdt_pairs", 600, _produce)
 
 
 @tool("binance.market_caps", "Approximate circulating market caps from Binance marketing endpoint.")
