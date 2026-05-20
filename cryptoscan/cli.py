@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -16,6 +18,20 @@ from .tools.derivs_scanner import scan_oi_funding_flip
 
 app = typer.Typer(help="cryptoscan — harness-agent trade journal & scanner")
 console = Console()
+
+
+def _fmt_usd(value: float | int | None) -> str:
+    try:
+        n = float(value or 0)
+    except (TypeError, ValueError):
+        return "-"
+    if n >= 1_000_000_000:
+        return f"${n / 1_000_000_000:.2f}B"
+    if n >= 1_000_000:
+        return f"${n / 1_000_000:.2f}M"
+    if n >= 1_000:
+        return f"${n / 1_000:.2f}K"
+    return f"${n:.0f}"
 
 
 @app.command()
@@ -97,6 +113,96 @@ def scan(
                 if ep_db:
                     ep_db.notified = True
                     s.add(ep_db)
+
+
+@app.command("contracts")
+def contracts_by_market_cap(
+    limit: int = 50,
+    ascending: bool = False,
+    include_unknown: bool = False,
+    export: Optional[Path] = None,
+) -> None:
+    """List Binance USDT perpetual contracts sorted by approximate market cap."""
+    from .tools import binance_market as bm
+
+    try:
+        symbols = bm.perp_symbols()
+        tickers = bm.perp_tickers()
+        funding = bm.perp_funding()
+        mcaps = bm.market_caps()
+        spot = bm.spot_symbols()
+    except Exception as e:
+        console.print(f"[red]contracts fetch failed:[/red] {type(e).__name__}: {e}")
+        raise typer.Exit(2)
+
+    rows: list[dict[str, object]] = []
+    for symbol in symbols:
+        coin = symbol.removesuffix("USDT")
+        ticker = tickers.get(symbol, {})
+        market_cap = float(mcaps.get(coin, 0) or 0)
+        if not include_unknown and market_cap <= 0:
+            continue
+        rows.append(
+            {
+                "symbol": symbol,
+                "coin": coin,
+                "market_cap_usd": market_cap,
+                "price": float(ticker.get("lastPrice", 0) or 0),
+                "price_change_24h_pct": float(ticker.get("priceChangePercent", 0) or 0),
+                "volume_24h_usdt": float(ticker.get("quoteVolume", 0) or 0),
+                "funding_rate": float(funding.get(symbol, 0) or 0),
+                "has_spot": coin in spot,
+            }
+        )
+
+    rows.sort(key=lambda r: float(r["market_cap_usd"] or 0), reverse=not ascending)
+    shown = rows[: max(limit, 0)] if limit else rows
+
+    table = Table(title="Binance USDT perps by approximate market cap")
+    table.add_column("#", justify="right")
+    table.add_column("symbol")
+    table.add_column("mcap", justify="right")
+    table.add_column("price", justify="right")
+    table.add_column("24h%", justify="right")
+    table.add_column("volume", justify="right")
+    table.add_column("funding", justify="right")
+    table.add_column("spot")
+    for idx, row in enumerate(shown, start=1):
+        table.add_row(
+            str(idx),
+            str(row["symbol"]),
+            _fmt_usd(row["market_cap_usd"]),
+            f"{float(row['price']):.8g}",
+            f"{float(row['price_change_24h_pct']):+.2f}%",
+            _fmt_usd(row["volume_24h_usdt"]),
+            f"{float(row['funding_rate']):+.4%}",
+            "yes" if row["has_spot"] else "-",
+        )
+    console.print(table)
+    console.print(
+        f"[dim]shown={len(shown)} total={len(rows)} "
+        "market_cap source=Binance marketing endpoint, approximate[/dim]"
+    )
+
+    if export:
+        export.parent.mkdir(parents=True, exist_ok=True)
+        with export.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "symbol",
+                    "coin",
+                    "market_cap_usd",
+                    "price",
+                    "price_change_24h_pct",
+                    "volume_24h_usdt",
+                    "funding_rate",
+                    "has_spot",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+        console.print(f"[green]exported[/green] {export}")
 
 
 @app.command("review")
