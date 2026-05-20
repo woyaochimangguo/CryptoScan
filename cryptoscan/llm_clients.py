@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Literal
 
 from .config import settings
@@ -42,14 +43,27 @@ def _profile_env_name(profile: str) -> str:
     return suffix
 
 
+@lru_cache(maxsize=1)
+def _dotenv_values() -> dict[str, str]:
+    try:
+        from dotenv import dotenv_values
+    except Exception:
+        return {}
+    return {k: str(v) for k, v in dotenv_values(".env").items() if k and v is not None}
+
+
+def _env(key: str) -> str:
+    return os.getenv(key) or _dotenv_values().get(key, "")
+
+
 def _profile_values(profile: str) -> tuple[str, str, str]:
     suffix = _profile_env_name(profile)
     if not suffix:
         return "", "", ""
     return (
-        os.getenv(f"LLM_PROFILE_{suffix}_MODEL", ""),
-        os.getenv(f"LLM_PROFILE_{suffix}_BASE_URL", ""),
-        os.getenv(f"LLM_PROFILE_{suffix}_API_KEY", ""),
+        _env(f"LLM_PROFILE_{suffix}_MODEL"),
+        _env(f"LLM_PROFILE_{suffix}_BASE_URL"),
+        _env(f"LLM_PROFILE_{suffix}_API_KEY"),
     )
 
 
@@ -57,7 +71,8 @@ def available_profiles() -> dict[str, dict[str, str]]:
     """Return configured LLM profiles without exposing API keys."""
     out: dict[str, dict[str, str]] = {}
     pattern = re.compile(r"^LLM_PROFILE_([A-Z0-9_]+)_(MODEL|BASE_URL|API_KEY)$")
-    for key, value in os.environ.items():
+    env_items = {**_dotenv_values(), **os.environ}
+    for key, value in env_items.items():
         m = pattern.match(key)
         if not m:
             continue
