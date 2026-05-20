@@ -64,7 +64,8 @@ def scan(
     elif llm:
         from .harness.llm_policy import LLMPolicy
         agent = HarnessAgent(policy=LLMPolicy())
-        console.print(f"[cyan]using LLM policy ({agent.policy.model or 'default'})[/cyan]")
+        from .llm_clients import resolve
+        console.print(f"[cyan]using LLM policy ({agent.policy.model or resolve('decision').model})[/cyan]")
     else:
         agent = HarnessAgent()
     created: list[Episode] = []
@@ -279,9 +280,9 @@ def replay(episode_id: str, llm: bool = True, dual: bool = False, verbose: bool 
         agent = HarnessAgent(policy=policy, dedup_hours=0)
     elif llm:
         from .harness.llm_policy import LLMPolicy
-        from .config import settings as _s
         policy = LLMPolicy(verbose=verbose)
-        console.print(f"[cyan]LLM policy  model={policy.model or _s.llm_model}[/cyan]")
+        from .llm_clients import resolve
+        console.print(f"[cyan]LLM policy  model={policy.model or resolve('decision').model}[/cyan]")
         agent = HarnessAgent(policy=policy, dedup_hours=0)
     else:
         agent = HarnessAgent(dedup_hours=0)
@@ -379,8 +380,9 @@ def self_test(llm: bool = False, verbose: bool = True, fresh: bool = False) -> N
         if llm:
             from .harness.llm_policy import LLMPolicy
             policy = LLMPolicy(verbose=verbose)
-            from .config import settings as _s
-            console.print(f"[cyan]LLM policy  model={policy.model or _s.llm_model} base={policy.base_url or _s.llm_base_url or 'openai-default'}[/cyan]")
+            from .llm_clients import resolve
+            cfg = resolve("decision")
+            console.print(f"[cyan]LLM policy  model={policy.model or cfg.model} base={policy.base_url or cfg.base_url or 'openai-default'}[/cyan]")
             agent = HarnessAgent(policy=policy, dedup_hours=0 if fresh else 24)
             ep = agent.handle_signal("self_test", "DEMOUSDT", fake)
         else:
