@@ -80,6 +80,10 @@
         <table class="w-full text-xs"><tbody id="stats-symbol"></tbody></table>
       </div>
       <div class="bg-white border rounded overflow-hidden">
+        <div class="bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 uppercase">by strategy</div>
+        <table class="w-full text-xs"><tbody id="stats-strategy"></tbody></table>
+      </div>
+      <div class="bg-white border rounded overflow-hidden">
         <div class="bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 uppercase">by exit reason</div>
         <table class="w-full text-xs"><tbody id="stats-exit"></tbody></table>
       </div>
@@ -112,6 +116,7 @@
           <tr>
             <th class="text-left">time</th>
             <th class="text-left">symbol</th>
+            <th class="text-left">strategy</th>
             <th class="text-left">decision</th>
             <th class="text-right">conf</th>
             <th class="text-right">price</th>
@@ -124,7 +129,7 @@
             <th></th>
           </tr>
         </thead>
-        <tbody id="episodes"><tr><td colspan="12" class="text-gray-400 p-4">loading…</td></tr></tbody>
+        <tbody id="episodes"><tr><td colspan="13" class="text-gray-400 p-4">loading…</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -219,7 +224,7 @@ function renderEpisodes() {
   if (filter === 'closed') eps = eps.filter(e => e.closed_at);
   if (filter === 'agree') eps = eps.filter(e => (e.tags||[]).some(t => t.startsWith('dual:agree')));
   const tb = document.getElementById('episodes');
-  if (!eps.length) { tb.innerHTML = `<tr><td colspan='12' class='text-gray-400 p-3'>no episodes</td></tr>`; return; }
+  if (!eps.length) { tb.innerHTML = `<tr><td colspan='13' class='text-gray-400 p-3'>no episodes</td></tr>`; return; }
   tb.innerHTML = eps.map(ep => {
     const t = new Date(ep.created_at + 'Z').toLocaleString();
     const pillD = `pill pill-${ep.decision}`;
@@ -239,6 +244,7 @@ function renderEpisodes() {
       <tr class='cursor-pointer' onclick="showDetail('${ep.id}')">
         <td class='whitespace-nowrap'>${t}</td>
         <td class='font-semibold'>${ep.symbol}</td>
+        <td class='text-gray-500'>${ep.strategy_id || '-'}</td>
         <td><span class='${pillD}'>${ep.decision}</span></td>
         <td class='text-right'>${fmt(ep.confidence, 2)}</td>
         <td class='text-right'>${fmt(ep.price, 6)}</td>
@@ -315,6 +321,8 @@ function renderDetail(d) {
       <div><div class='text-gray-500'>24h chg</div><div class='${cls(snap.price_chg_24h)} font-semibold'>${fmtPct(snap.price_chg_24h,1)}</div></div>
       <div><div class='text-gray-500'>vol 24h</div><div>${fmtCap(snap.volume_24h)}</div></div>
       <div><div class='text-gray-500'>market cap</div><div>${fmtCap(snap.market_cap_usd)}</div></div>
+      <div><div class='text-gray-500'>strategy</div><div>${d.strategy_id || '-'} ${d.strategy_version ? 'v'+d.strategy_version : ''}</div></div>
+      <div><div class='text-gray-500'>policy/model</div><div>${d.policy_id || '-'} / ${d.model_profile || '-'}</div></div>
       <div><div class='text-gray-500'>funding (was→now)</div><div>${(snap.prev_funding*100||0).toFixed(4)}% → <b class='${cls(-(snap.curr_funding||0))}'>${(snap.curr_funding*100||0).toFixed(4)}%</b></div></div>
       <div><div class='text-gray-500'>OI change</div><div class='${cls(snap.oi_change_pct)} font-semibold'>${fmtPct(snap.oi_change_pct,1)}</div></div>
       <div><div class='text-gray-500'>has spot</div><div>${snap.has_spot ? 'yes' : 'no'}</div></div>
@@ -461,6 +469,7 @@ async function loadStats() {
     : `<span class='text-gray-400'>no closed trades in the last ${s.since_days} days</span>`;
   renderStatsTable(s.by_tag, 'stats-tag', 'tag');
   renderStatsTable(s.by_symbol, 'stats-symbol', 'symbol');
+  renderStatsTable(s.by_strategy, 'stats-strategy', 'strategy');
   renderStatsTable(s.by_exit_reason, 'stats-exit', 'exit reason');
   renderStatsTable(s.by_trigger, 'stats-trigger', 'trigger');
 }

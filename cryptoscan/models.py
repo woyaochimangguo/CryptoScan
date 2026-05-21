@@ -27,6 +27,15 @@ class Episode(SQLModel, table=True):
     symbol: str = Field(index=True)
     venue: str = "binance_perp"
 
+    # Strategy/policy metadata. These make multi-strategy analysis possible
+    # without overloading trigger/tags.
+    strategy_id: str = Field(default="legacy", index=True)
+    strategy_name: str = ""
+    strategy_version: str = ""
+    policy_id: str = ""
+    model_profile: str = ""
+    risk_profile: str = "paper_default"
+
     # Snapshot (full market context at decision time)
     snapshot: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 

@@ -19,6 +19,7 @@ signal trigger → build snapshot → policy decides → persist Episode → TG 
 ```
 cryptoscan/
 ├── tools/         tool registry; Binance market + OI/funding scanner
+├── strategies/    strategy plugins + registry
 ├── harness/       Agent main loop, snapshot builder, policies
 ├── notify/        Telegram renderer
 ├── models.py      Episode SQLModel
@@ -39,6 +40,42 @@ cp .env.example .env
 
 cryptoscan init                # create data/cryptoscan.db
 ```
+
+## Strategies
+
+The scanner now runs through a small strategy registry instead of hard-coding
+one setup. The first registered strategy is:
+
+```bash
+cryptoscan strategies
+cryptoscan scan --strategy oi_funding_flip --dual
+```
+
+To add a strategy, create a module under `cryptoscan/strategies/` that exposes
+the same shape as `OiFundingFlipStrategy`:
+
+```python
+class MyStrategy:
+    id = "my_strategy"
+    name = "My strategy"
+    version = "1.0.0"
+    trigger = "my_trigger"
+    default_policy_id = "dual"
+
+    def scan(self, **kwargs) -> list[Signal]: ...
+    def warm(self, signals: list[Signal]) -> None: ...
+    def policy(self, mode: str = "dual") -> Policy: ...
+```
+
+Then register it in `cryptoscan/strategies/registry.py` and enable it via:
+
+```env
+ENABLED_STRATEGIES=oi_funding_flip,my_strategy
+```
+
+Each Episode persists `strategy_id`, `strategy_version`, `policy_id`,
+`model_profile`, and `risk_profile`, so dashboard stats can compare strategies
+instead of mixing every signal into one bucket.
 
 ## Daily use
 

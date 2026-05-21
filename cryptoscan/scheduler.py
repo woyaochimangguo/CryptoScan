@@ -91,42 +91,45 @@ def refresh_contract_rankings() -> None:
 # ---------------------------------------------------------------------------
 
 def job_scan_dual(consensus_only_notify: bool = True) -> None:
-    """Scan + DualPolicy + (optionally) TG-notify consensus."""
-    from .tools.derivs_scanner import scan_oi_funding_flip
-    from .harness.llm_policy import LLMPolicy
-    from .harness.dual_policy import DualPolicy
+    """Scan enabled strategies + policy + optional TG notify."""
+    from .strategies import enabled_strategies
 
-    log.info("scan_dual: start")
-    _mark_scheduler("scanning", job="scan_dual")
-    try:
-        raw = scan_oi_funding_flip()
-    except Exception as e:
-        log.error("scan failed: %s", e)
-        _mark_scheduler("scan_failed", job="scan_dual", error=str(e))
-        return
-    if not raw:
-        log.info("scan_dual: no flips")
+    strategies = enabled_strategies()
+    log.info("scan_dual: start strategies=%s", ",".join(s.id for s in strategies))
+    _mark_scheduler("scanning", job="scan_dual", strategies=[s.id for s in strategies])
+    created: list[Episode] = []
+    candidate_count = 0
+
+    for strategy in strategies:
+        try:
+            signals = strategy.scan()
+        except Exception as e:
+            log.error("strategy scan failed %s: %s", strategy.id, e)
+            continue
+        candidate_count += len(signals)
+        if not signals:
+            log.info("strategy %s: no candidates", strategy.id)
+            continue
+
+        try:
+            strategy.warm(signals)
+        except Exception as e:
+            log.warning("strategy warm failed %s (continuing): %s", strategy.id, e)
+
+        agent = HarnessAgent(policy=strategy.policy("dual"))
+        for sig in signals:
+            try:
+                ep = agent.handle_strategy_signal(strategy, sig, policy_id="dual")
+            except Exception as e:
+                log.warning("handle_signal failed for %s/%s: %s", strategy.id, sig.symbol, e)
+                continue
+            if ep:
+                created.append(ep)
+
+    if candidate_count == 0:
+        log.info("scan_dual: no candidates")
         _mark_scheduler("idle", job="scan_dual", candidates=0, episodes=0, pushed=0)
         return
-
-    # Warm caches in parallel
-    from .tools.binance_market import prefetch_square_hashtags, market_caps, spot_symbols
-    try:
-        market_caps(); spot_symbols()
-        prefetch_square_hashtags([sig["symbol"].replace("USDT", "") for sig in raw])
-    except Exception as e:
-        log.warning("prefetch failed (continuing): %s", e)
-
-    agent = HarnessAgent(policy=DualPolicy(llm_policy=LLMPolicy()))
-    created: list[Episode] = []
-    for sig in raw:
-        try:
-            ep = agent.handle_signal(trigger="oi_funding_flip", symbol=sig["symbol"], base_signal=sig)
-        except Exception as e:
-            log.warning("handle_signal failed for %s: %s", sig.get("symbol"), e)
-            continue
-        if ep:
-            created.append(ep)
 
     pushed = 0
     for ep in created:
@@ -148,8 +151,8 @@ def job_scan_dual(consensus_only_notify: bool = True) -> None:
                 pushed += 1
             except Exception as e:
                 log.warning("notify failed for %s: %s", ep.id, e)
-    log.info("scan_dual: %d episodes / %d pushed (from %d candidates)", len(created), pushed, len(raw))
-    _mark_scheduler("idle", job="scan_dual", candidates=len(raw), episodes=len(created), pushed=pushed)
+    log.info("scan_dual: %d episodes / %d pushed (from %d candidates)", len(created), pushed, candidate_count)
+    _mark_scheduler("idle", job="scan_dual", candidates=candidate_count, episodes=len(created), pushed=pushed)
 
 
 def job_position_watch() -> None:

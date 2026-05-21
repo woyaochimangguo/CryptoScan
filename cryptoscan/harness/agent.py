@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from sqlmodel import select
 
@@ -101,12 +101,38 @@ class HarnessAgent:
     policy: Policy = rule_policy
     dedup_hours: int = 24
 
+    def _policy_id(self) -> str:
+        name = self.policy.__class__.__name__ if not isinstance(self.policy, type(rule_policy)) else "rule_policy"
+        if name == "function":
+            return "rule"
+        if name == "DualPolicy":
+            return "dual"
+        if name == "LLMPolicy":
+            return "llm"
+        return name
+
+    def _model_profile(self) -> str:
+        if self._policy_id() not in {"dual", "llm"}:
+            return ""
+        try:
+            from ..llm_clients import resolve
+
+            return resolve("decision").profile or resolve("decision").model
+        except Exception:
+            return ""
+
     def handle_signal(
         self,
         trigger: str,
         symbol: str,
         base_signal: dict[str, Any],
         venue: str = "binance_perp",
+        strategy_id: str = "legacy",
+        strategy_name: str = "",
+        strategy_version: str = "",
+        policy_id: str | None = None,
+        model_profile: str | None = None,
+        risk_profile: str = "paper_default",
     ) -> Episode | None:
         if _is_duplicate(symbol, trigger, self.dedup_hours):
             return None
@@ -122,6 +148,12 @@ class HarnessAgent:
             trigger=trigger,
             symbol=symbol,
             venue=venue,
+            strategy_id=strategy_id,
+            strategy_name=strategy_name,
+            strategy_version=strategy_version,
+            policy_id=policy_id or self._policy_id(),
+            model_profile=model_profile if model_profile is not None else self._model_profile(),
+            risk_profile=risk_profile,
             snapshot=snapshot,
             tools_called=tools_called,
             similar_episode_ids=similar_episode_ids,
@@ -143,6 +175,26 @@ class HarnessAgent:
         # Reload as a fresh detached object so callers can mutate without session
         with session_scope() as s:
             return s.get(Episode, ep_id)
+
+    def handle_strategy_signal(
+        self,
+        strategy: Any,
+        signal: Any,
+        venue: str = "binance_perp",
+        policy_id: str | None = None,
+        risk_profile: str = "paper_default",
+    ) -> Episode | None:
+        return self.handle_signal(
+            trigger=signal.trigger,
+            symbol=signal.symbol,
+            base_signal=signal.data,
+            venue=venue,
+            strategy_id=strategy.id,
+            strategy_name=strategy.name,
+            strategy_version=strategy.version,
+            policy_id=policy_id or getattr(strategy, "default_policy_id", None),
+            risk_profile=risk_profile,
+        )
 
     # --- Lifecycle helpers ---------------------------------------------------
 

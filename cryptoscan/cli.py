@@ -14,7 +14,6 @@ from .db import init_db, session_scope
 from .harness import HarnessAgent
 from .models import Episode
 from .notify import send_episode
-from .tools.derivs_scanner import scan_oi_funding_flip
 
 app = typer.Typer(help="cryptoscan — harness-agent trade journal & scanner")
 console = Console()
@@ -43,58 +42,57 @@ def init() -> None:
 
 @app.command()
 def scan(
+    strategy: str = "oi_funding_flip",
     notify: bool = True,
     min_volume: Optional[float] = None,
     llm: bool = False,
     dual: bool = False,
     consensus_only_notify: bool = True,
 ) -> None:
-    """Run the OI+funding-flip scanner once and create episodes for new signals.
+    """Run one strategy scan and create episodes for new signals.
 
+    --strategy: strategy id from `cryptoscan strategies`
     --llm   : pure LLM policy
     --dual  : run rule first; only escalate to LLM on long/short candidates;
               episode tagged with consensus / disagreement.
     --consensus-only-notify (default): in dual mode, only push TG when rule+LLM agree.
     """
     init_db()
+    from .strategies import get_strategy
+
     try:
-        raw = scan_oi_funding_flip(min_volume_usdt=min_volume)
+        strat = get_strategy(strategy)
+        signals = strat.scan(min_volume_usdt=min_volume)
     except Exception as e:
         console.print(f"[red]scan failed:[/red] {type(e).__name__}: {e}")
         console.print("[dim]Check network reachability to fapi.binance.com (try `cryptoscan doctor`).[/dim]")
         raise typer.Exit(2)
-    if not raw:
+    if not signals:
         console.print(f"[dim]{datetime.utcnow().isoformat(timespec='seconds')}Z  no flip detected[/dim]")
         return
 
-    # Warm shared/per-coin caches in parallel before iterating.
-    from .tools.binance_market import prefetch_square_hashtags, market_caps, spot_symbols
-    market_caps(); spot_symbols()
-    prefetch_square_hashtags([sig["symbol"].replace("USDT", "") for sig in raw])
+    try:
+        strat.warm(signals)
+    except Exception as e:
+        console.print(f"[yellow]prefetch failed, continuing:[/yellow] {e}")
 
     if dual:
-        from .harness.llm_policy import LLMPolicy
-        from .harness.dual_policy import DualPolicy
-        agent = HarnessAgent(policy=DualPolicy(llm_policy=LLMPolicy()))
+        agent = HarnessAgent(policy=strat.policy("dual"))
         console.print("[cyan]using DUAL policy (rule -> LLM only on long/short)[/cyan]")
     elif llm:
-        from .harness.llm_policy import LLMPolicy
-        agent = HarnessAgent(policy=LLMPolicy())
+        agent = HarnessAgent(policy=strat.policy("llm"))
         from .llm_clients import resolve
         console.print(f"[cyan]using LLM policy ({agent.policy.model or resolve('decision').model})[/cyan]")
     else:
-        agent = HarnessAgent()
+        agent = HarnessAgent(policy=strat.policy("rule"))
     created: list[Episode] = []
-    for sig in raw:
-        ep = agent.handle_signal(
-            trigger="oi_funding_flip",
-            symbol=sig["symbol"],
-            base_signal=sig,
-        )
+    policy_id = "dual" if dual else ("llm" if llm else "rule")
+    for sig in signals:
+        ep = agent.handle_strategy_signal(strat, sig, policy_id=policy_id)
         if ep:
             created.append(ep)
 
-    console.print(f"[cyan]{len(created)} new episode(s) from {len(raw)} candidates[/cyan]")
+    console.print(f"[cyan]{len(created)} new episode(s) from {len(signals)} candidates[/cyan]")
     for ep in created:
         consensus = any(t.startswith("dual:agree") for t in (ep.tags or []))
         disagree = any(t.startswith("dual:disagree") for t in (ep.tags or []))
@@ -113,6 +111,31 @@ def scan(
                 if ep_db:
                     ep_db.notified = True
                     s.add(ep_db)
+
+
+@app.command("strategies")
+def strategies() -> None:
+    """List registered strategy plugins."""
+    from .strategies import enabled_strategies, list_strategies
+
+    enabled = {s.id for s in enabled_strategies()}
+    table = Table(title="registered strategies")
+    table.add_column("enabled")
+    table.add_column("id")
+    table.add_column("name")
+    table.add_column("version")
+    table.add_column("trigger")
+    table.add_column("default policy")
+    for strat in list_strategies():
+        table.add_row(
+            "yes" if strat.id in enabled else "-",
+            strat.id,
+            strat.name,
+            strat.version,
+            strat.trigger,
+            strat.default_policy_id,
+        )
+    console.print(table)
 
 
 @app.command("contracts")
@@ -194,6 +217,7 @@ def review_today(hours: int = 24) -> None:
     table = Table(title=f"episodes (last {hours}h)")
     table.add_column("id")
     table.add_column("time")
+    table.add_column("strategy")
     table.add_column("symbol")
     table.add_column("decision")
     table.add_column("conf")
@@ -204,6 +228,7 @@ def review_today(hours: int = 24) -> None:
         table.add_row(
             ep.id,
             ep.created_at.strftime("%m-%d %H:%M"),
+            ep.strategy_id or "-",
             ep.symbol,
             ep.decision,
             f"{ep.confidence:.2f}",

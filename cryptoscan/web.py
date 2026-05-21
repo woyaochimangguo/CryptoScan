@@ -180,6 +180,11 @@ def api_episodes(hours: int = 48, limit: int = 200) -> list[dict[str, Any]]:
             "created_at": ep.created_at.isoformat(),
             "symbol": ep.symbol,
             "trigger": ep.trigger,
+            "strategy_id": ep.strategy_id,
+            "strategy_name": ep.strategy_name,
+            "strategy_version": ep.strategy_version,
+            "policy_id": ep.policy_id,
+            "model_profile": ep.model_profile,
             "decision": ep.decision,
             "confidence": round(ep.confidence, 3),
             "executed": ep.executed,
@@ -236,6 +241,7 @@ def api_stats_patterns(days: int = 30) -> dict[str, Any]:
     Returns win-rate / avg PnL / count bucketed by:
       * dual tag  (dual:agree:long, dual:llm_lead:short, ...)
       * symbol
+      * strategy
       * trigger
       * exit reason (auto_sl, auto_tp1, manual, ...)
     Plus overall totals.
@@ -284,6 +290,7 @@ def api_stats_patterns(days: int = 30) -> dict[str, Any]:
     by_tag = bucket(lambda r: [t for t in (r.tags or [])
                                if t.startswith("dual:agree") or t.startswith("dual:llm_lead")])
     by_symbol = bucket(lambda r: [r.symbol])
+    by_strategy = bucket(lambda r: [r.strategy_id or r.trigger])
     by_trigger = bucket(lambda r: [r.trigger])
     by_exit = bucket(lambda r: [(r.actual_exit or {}).get("reason") or "unknown"])
 
@@ -302,6 +309,7 @@ def api_stats_patterns(days: int = 30) -> dict[str, Any]:
         "overall": overall,
         "by_tag": by_tag,
         "by_symbol": by_symbol,
+        "by_strategy": by_strategy,
         "by_trigger": by_trigger,
         "by_exit_reason": by_exit,
     }
